@@ -1,0 +1,8 @@
+.vercel
+
+# Local secrets
+tokensmain.txt
+.env
+.env.local
+backend/.env
+*.db
