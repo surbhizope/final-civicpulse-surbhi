@@ -78,12 +78,6 @@ const departments: Department[] = [
   { code: "PUBLIC_HEALTH", name: "Public Health", slaHours: 36 },
 ];
 
-const demoUsers: Session[] = [
-  { email: "officer@civicpulse.local", name: "Asha Field Officer", role: "FIELD_OFFICER" },
-  { email: "supervisor@civicpulse.local", name: "Ravi Supervisor", role: "SUPERVISOR" },
-  { email: "commissioner@civicpulse.local", name: "Meera Commissioner", role: "COMMISSIONER" },
-];
-
 const sessionKey = "civicpulse.session.v1";
 const tokenKey = "civicpulse.token.v1";
 const defaultCenter: [number, number] = [12.9716, 77.5946];
