@@ -446,7 +446,9 @@ function TicketStatus({ ticket, navigate }: { ticket?: Ticket; navigate: (route:
 
 function AdminLogin({ login }: { login: (email: string, password: string) => Promise<void> }) {
   const [error, setError] = useState("");
-  async function submit(formData: FormData) {
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
     const email = String(formData.get("email") || "").trim();
     const password = String(formData.get("password") || "");
     try {

@@ -80,8 +80,8 @@ begin
 
     insert into timeline_events (id, ticket_id, at, label, detail, actor_id)
     values
-        (uuid_generate_v4(), ticket2_id, now() - interval '6 hours', 'Submitted', 'Anonymous complaint received.'),
-        (uuid_generate_v4(), ticket2_id, now() - interval '5 hours 55 minutes', 'Triaged', 'Routed to Water with urgent priority.'),
+        (uuid_generate_v4(), ticket2_id, now() - interval '6 hours', 'Submitted', 'Anonymous complaint received.', null),
+        (uuid_generate_v4(), ticket2_id, now() - interval '5 hours 55 minutes', 'Triaged', 'Routed to Water with urgent priority.', null),
         (uuid_generate_v4(), ticket2_id, now() - interval '4 hours', 'Assigned', 'Assigned to Asha Field Officer.', officer_id);
 
     -- Ticket 3: Garbage - IN_PROGRESS
@@ -110,8 +110,8 @@ begin
 
     insert into timeline_events (id, ticket_id, at, label, detail, actor_id)
     values
-        (uuid_generate_v4(), ticket3_id, now() - interval '18 hours', 'Submitted', 'Anonymous complaint received.'),
-        (uuid_generate_v4(), ticket3_id, now() - interval '17 hours 55 minutes', 'Triaged', 'Routed to Solid Waste with medium priority.'),
+        (uuid_generate_v4(), ticket3_id, now() - interval '18 hours', 'Submitted', 'Anonymous complaint received.', null),
+        (uuid_generate_v4(), ticket3_id, now() - interval '17 hours 55 minutes', 'Triaged', 'Routed to Solid Waste with medium priority.', null),
         (uuid_generate_v4(), ticket3_id, now() - interval '16 hours', 'Assigned', 'Assigned to Asha Field Officer.', officer_id),
         (uuid_generate_v4(), ticket3_id, now() - interval '2 hours', 'In Progress', 'Field work has started.', officer_id);
 
