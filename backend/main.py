@@ -102,6 +102,8 @@ def upload_to_supabase_storage(data_url: str, prefix: str, bucket: str = "ticket
     try:
         header, payload = data_url.split(",", 1)
         ext = "jpg" if "jpeg" in header or "jpg" in header else "png"
+        # Supabase only accepts image/jpeg / image/png — never "image/jpg".
+        content_type = "image/jpeg" if ext == "jpg" else "image/png"
         filename = f"{prefix}-{uuid4()}.{ext}"
         file_bytes = base64.b64decode(payload)
         
@@ -109,7 +111,7 @@ def upload_to_supabase_storage(data_url: str, prefix: str, bucket: str = "ticket
         result = supabase.storage.from_(bucket).upload(
             path=filename,
             file=file_bytes,
-            file_options={"content-type": f"image/{ext}"}
+            file_options={"content-type": content_type}
         )
         
         if result:
