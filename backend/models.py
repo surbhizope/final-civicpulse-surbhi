@@ -1,7 +1,7 @@
-from pydantic import BaseModel, Field, EmailStr
-from typing import Optional, List
-from datetime import datetime
 from enum import Enum
+
+from pydantic import AliasGenerator, BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 
 
 class DepartmentCode(str, Enum):
@@ -41,14 +41,16 @@ class TicketCreate(BaseModel):
     category: str = "General"
     latitude: float
     longitude: float
-    address: Optional[str] = None
-    before_photo: Optional[str] = None
+    address: str | None = None
+    before_photo: str | None = None
 
 
 class TicketResponse(BaseModel):
+    model_config = ConfigDict(alias_generator=AliasGenerator(to_camel), populate_by_name=True)
+
     id: str
     ticket_number: str
-    pin: Optional[str] = None
+    pin: str | None = None
     description: str
     category: str
     department_code: str
@@ -57,16 +59,16 @@ class TicketResponse(BaseModel):
     latitude: float
     longitude: float
     address: str
-    before_photo: Optional[str] = None
-    after_photo: Optional[str] = None
-    closing_note: Optional[str] = None
-    assigned_to: Optional[str] = None
-    duplicate_of: Optional[str] = None
+    before_photo: str | None = None
+    after_photo: str | None = None
+    closing_note: str | None = None
+    assigned_to: str | None = None
+    duplicate_of: str | None = None
     impact_count: int
     created_at: str
     sla_due_at: str
-    resolved_at: Optional[str] = None
-    timeline: List[dict] = []
+    resolved_at: str | None = None
+    timeline: list[dict] = []
 
 
 class TrackRequest(BaseModel):
@@ -75,7 +77,8 @@ class TrackRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    # Plain str: demo accounts use the reserved .local TLD, which EmailStr rejects.
+    email: str
     password: str
 
 
@@ -87,9 +90,9 @@ class LoginResponse(BaseModel):
 
 
 class TicketAction(BaseModel):
-    action: str
-    closing_note: Optional[str] = None
-    after_photo: Optional[str] = None
+    # `action` lives in the URL path; body only carries optional fields.
+    closing_note: str | None = None
+    after_photo: str | None = None
 
 
 class TriageResult(BaseModel):

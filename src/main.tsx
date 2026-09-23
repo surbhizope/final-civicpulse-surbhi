@@ -87,7 +87,7 @@ const demoUsers: Session[] = [
 const sessionKey = "civicpulse.session.v1";
 const tokenKey = "civicpulse.token.v1";
 const defaultCenter: [number, number] = [12.9716, 77.5946];
-const API_BASE = import.meta.env.DEV ? "" : (import.meta.env.VITE_API_BASE_URL || "https://civicpulse-api.onrender.com");
+const API_BASE = import.meta.env.DEV ? "" : (import.meta.env.VITE_API_BASE_URL || "https://civicpulse-api-qd7i.onrender.com");
 
 const markerIcon = L.icon({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -455,7 +455,7 @@ function AdminLogin({ login }: { login: (email: string, password: string) => Pro
       await login(email, password);
       setError("");
     } catch (e) {
-      setError("Invalid credentials. Use demo accounts with password.");
+      setError(e instanceof Error && e.message ? e.message : "Login failed. Check your credentials.");
     }
   }
   return (

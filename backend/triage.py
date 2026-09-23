@@ -1,10 +1,9 @@
 import json
-import re
 import os
-from typing import Optional
-from groq import Groq
-from models import TriageResult, DepartmentCode, Priority
 
+from groq import Groq
+
+from models import DepartmentCode, Priority, TriageResult
 
 GROQ_SYSTEM_PROMPT = """You are a civic issue triage system. Analyze the complaint and return ONLY valid JSON with these exact fields:
 {
@@ -75,7 +74,7 @@ async def groq_triage(description: str, category: str) -> TriageResult:
             response_format={"type": "json_object"}
         )
         
-        result = json.loads(completion.choices[0].message.content)
+        result = json.loads(completion.choices[0].message.content or "{}")
         
         # Validate enums
         department = DepartmentCode(result.get("department", "ROADS"))

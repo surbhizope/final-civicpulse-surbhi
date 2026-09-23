@@ -6,9 +6,9 @@
 -- In production, use proper password hashing
 
 insert into officials (auth_user_id, email, full_name, role, department_id, password_hash) values
-    (uuid_generate_v4(), 'officer@civicpulse.local', 'Asha Field Officer', 'FIELD_OFFICER', (select id from departments where code = 'ROADS'), '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/RK.PZvO.S'),
-    (uuid_generate_v4(), 'supervisor@civicpulse.local', 'Ravi Supervisor', 'SUPERVISOR', (select id from departments where code = 'WATER'), '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/RK.PZvO.S'),
-    (uuid_generate_v4(), 'commissioner@civicpulse.local', 'Meera Commissioner', 'COMMISSIONER', null, '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/RK.PZvO.S')
+    (uuid_generate_v4(), 'officer@civicpulse.local', 'Asha Field Officer', 'FIELD_OFFICER', (select id from departments where code = 'ROADS'), '$2b$12$7Z2c3bpWbk.YiMNrB5eXg.AB19i7XydgyeRsxrk8hm0WVJx95RW4G'),
+    (uuid_generate_v4(), 'supervisor@civicpulse.local', 'Ravi Supervisor', 'SUPERVISOR', (select id from departments where code = 'WATER'), '$2b$12$7Z2c3bpWbk.YiMNrB5eXg.AB19i7XydgyeRsxrk8hm0WVJx95RW4G'),
+    (uuid_generate_v4(), 'commissioner@civicpulse.local', 'Meera Commissioner', 'COMMISSIONER', null, '$2b$12$7Z2c3bpWbk.YiMNrB5eXg.AB19i7XydgyeRsxrk8hm0WVJx95RW4G')
 on conflict (email) do nothing;
 
 -- Demo tickets

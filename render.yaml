@@ -24,9 +24,9 @@ services:
       - key: PORT
         value: "8000"
       - key: CORS_ORIGINS
-        value: "https://civicpulse.vercel.app,https://civicpulse-git-main.vercel.app"
+        value: "*"
       - key: NEXT_PUBLIC_APP_URL
-        value: "https://civicpulse.vercel.app"
+        value: "https://celadon-sfogliatella-937900.netlify.app"
       - key: GROQ_API_KEY
         sync: false
       - key: SECRET_KEY

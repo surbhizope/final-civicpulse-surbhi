@@ -120,35 +120,4 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_API_URL: https://civicpulse-api.onrender.com
-
-  deploy-backend:
-    name: Deploy Backend to Render
-    needs: [backend-lint, backend-test]
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Deploy to Render
-        uses: render-community/action-deploy@v1
-        with:
-          service-id: ${{ secrets.RENDER_SERVICE_ID }}
-          api-key: ${{ secrets.RENDER_API_KEY }}
-
-  deploy-frontend:
-    name: Deploy Frontend to Netlify
-    needs: [frontend-lint, frontend-build]
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install Netlify CLI
-        run: npm install -g netlify-cli@latest
-      
-      - name: Deploy to Netlify
-        run: netlify deploy --prod --dir=dist
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          VITE_API_BASE_URL: https://civicpulse-api-qd7i.onrender.com

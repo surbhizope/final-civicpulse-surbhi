@@ -1,6 +1,6 @@
-from pydantic_settings import BaseSettings
-from typing import Optional
+
 from pydantic import field_validator
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in v.split(",") if origin.strip()]
     
     # AI (optional)
-    groq_api_key: Optional[str] = None
+    groq_api_key: str | None = None
     
     # Auth
     secret_key: str = "dev-secret-change-in-production"
@@ -37,4 +37,5 @@ class Settings(BaseSettings):
         extra = "ignore"
 
 
-settings = Settings()
+# Required Supabase vars are provided via environment on Render/CI, not statically knowable.
+settings = Settings()  # type: ignore[call-arg]

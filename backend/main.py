@@ -1,25 +1,29 @@
-from fastapi import FastAPI, HTTPException, Depends, status, Request, File, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime, timezone, timedelta
-from uuid import uuid4
-import hashlib
 import base64
-import os
+import hashlib
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from uuid import uuid4
 
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from auth import create_access_token, decode_access_token, verify_password
 from config import settings
-from database import supabase, supabase_anon
+from database import supabase
 from models import (
-    TicketCreate, TicketResponse, TrackRequest, LoginRequest, LoginResponse,
-    TicketAction, TriageResult, DashboardStats, DepartmentCode, Priority,
-    TicketStatus, UserRole
+    DashboardStats,
+    DepartmentCode,
+    LoginRequest,
+    LoginResponse,
+    TicketAction,
+    TicketCreate,
+    TicketResponse,
+    TicketStatus,
+    TrackRequest,
+    UserRole,
 )
-from auth import verify_password, create_access_token, decode_access_token, get_password_hash
-from triage import groq_triage, fallback_triage
+from triage import groq_triage
 
 app = FastAPI(title="CivicPulse API", version="1.0.0")
 
@@ -61,7 +65,7 @@ def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+async def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(security)):
     if not credentials:
         raise HTTPException(status_code=401, detail="Not authenticated")
     payload = decode_access_token(credentials.credentials)
@@ -70,14 +74,14 @@ async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] =
     return payload
 
 
-async def get_current_official(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+async def get_current_official(credentials: HTTPAuthorizationCredentials | None = Depends(security)):
     user = await get_current_user(credentials)
     if user.get("role") not in [r.value for r in UserRole]:
         raise HTTPException(status_code=403, detail="Not authorized")
     return user
 
 
-def save_data_url(data_url: Optional[str], prefix: str) -> Optional[str]:
+def save_data_url(data_url: str | None, prefix: str) -> str | None:
     if not data_url:
         return None
     if "," not in data_url:
@@ -90,7 +94,7 @@ def save_data_url(data_url: Optional[str], prefix: str) -> Optional[str]:
     return f"/uploads/{filename}"
 
 
-def upload_to_supabase_storage(data_url: str, prefix: str, bucket: str = "tickets") -> Optional[str]:
+def upload_to_supabase_storage(data_url: str, prefix: str, bucket: str = "tickets") -> str | None:
     """Upload base64 image to Supabase Storage."""
     if not data_url or "," not in data_url:
         return None
@@ -117,7 +121,7 @@ def upload_to_supabase_storage(data_url: str, prefix: str, bucket: str = "ticket
     return None
 
 
-def add_event(ticket_id: str, label: str, detail: str, actor_id: Optional[str] = None):
+def add_event(ticket_id: str, label: str, detail: str, actor_id: str | None = None):
     supabase.table("timeline_events").insert({
         "id": str(uuid4()),
         "ticket_id": ticket_id,
@@ -128,8 +132,12 @@ def add_event(ticket_id: str, label: str, detail: str, actor_id: Optional[str] =
     }).execute()
 
 
-def serialize_ticket(row: dict, pin: Optional[str] = None) -> dict:
+def serialize_ticket(row: dict, pin: str | None = None) -> dict:
     events = supabase.table("timeline_events").select("at,label,detail").eq("ticket_id", row["id"]).order("at").execute()
+    duplicate_of = row.get("duplicate_of")
+    if duplicate_of:
+        master = supabase.table("tickets").select("ticket_number").eq("id", duplicate_of).limit(1).execute()
+        duplicate_of = master.data[0]["ticket_number"] if master.data else None
     return {
         "id": row["id"],
         "ticketNumber": row["ticket_number"],
@@ -146,7 +154,7 @@ def serialize_ticket(row: dict, pin: Optional[str] = None) -> dict:
         "afterPhoto": row.get("after_photo_url"),
         "closingNote": row.get("closing_notes"),
         "assignedTo": row.get("assigned_officer_id"),
-        "duplicateOf": row.get("duplicate_of"),
+        "duplicateOf": duplicate_of,
         "impactCount": row.get("impact_count", 1),
         "createdAt": row["created_at"],
         "slaDueAt": row["sla_deadline"],
@@ -192,7 +200,7 @@ async def create_ticket(ticket: TicketCreate):
     duplicate_ticket = None
     if ticket.latitude and ticket.longitude:
         # Get active tickets in same department
-        active_tickets = supabase.table("tickets").select("id,ticket_number,latitude,longitude").eq(
+        active_tickets = supabase.table("tickets").select("id,ticket_number,latitude,longitude,impact_count").eq(
             "department_code", triage_result.department.value
         ).neq("status", "RESOLVED").execute()
         
@@ -230,7 +238,8 @@ async def create_ticket(ticket: TicketCreate):
         "longitude": ticket.longitude,
         "address": ticket.address or "Location provided by citizen",
         "before_photo_url": before_photo_url,
-        "duplicate_of": duplicate_ticket["ticket_number"] if duplicate_ticket else None,
+        "sla_hours": sla_hours,
+        "duplicate_of": duplicate_ticket["id"] if duplicate_ticket else None,
         "impact_count": 1,
         "created_at": created.isoformat(),
         "sla_deadline": (created + timedelta(hours=sla_hours)).isoformat(),
@@ -249,14 +258,17 @@ async def create_ticket(ticket: TicketCreate):
     
     if duplicate_ticket:
         add_event(ticket_id, "Duplicate Detected", f"Linked to existing ticket {duplicate_ticket['ticket_number']}")
-        # Increment impact count on master ticket
-        supabase.table("tickets").update({"impact_count": supabase.rpc("increment", {"x": 1})}).eq("id", duplicate_ticket["id"]).execute()
+        # Increment impact count on master ticket (int read-modify-write; no rpc needed)
+        new_impact = int(duplicate_ticket.get("impact_count") or 1) + 1
+        supabase.table("tickets").update({"impact_count": new_impact}).eq("id", duplicate_ticket["id"]).execute()
     
     return serialize_ticket(created_ticket, pin)
 
 
-@app.get("/tickets", response_model=List[TicketResponse])
-async def list_tickets(user: dict = Depends(get_current_official)):
+@app.get("/tickets", response_model=list[TicketResponse])
+async def list_tickets():
+    # Public read: homepage, map, and post-submit refresh work without a session.
+    # PINs are never included (serialize_ticket only sets pin when explicitly passed).
     result = supabase.table("tickets").select("*").order("created_at", desc=True).execute()
     return [serialize_ticket(row) for row in result.data]
 
@@ -283,12 +295,10 @@ async def ticket_action(ticket_id: str, action: str, request: TicketAction, user
     if not ticket_result.data:
         raise HTTPException(status_code=404, detail="Ticket not found")
     
-    ticket = ticket_result.data[0]
-    
     if action == "assign":
         supabase.table("tickets").update({
             "status": TicketStatus.ASSIGNED.value,
-            "assigned_officer_id": user.get("name", "Officer"),
+            "assigned_officer_id": user.get("sub"),
             "assigned_at": utcnow()
         }).eq("id", ticket_id).execute()
         add_event(ticket_id, "Assigned", f"Assigned to {user.get('name', 'Officer')}.", user.get("sub"))
@@ -328,7 +338,6 @@ async def ticket_action(ticket_id: str, action: str, request: TicketAction, user
 
 @app.get("/dashboard/stats", response_model=DashboardStats)
 async def dashboard_stats(user: dict = Depends(get_current_official)):
-    now = datetime.now(timezone.utc).isoformat()
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     
     open_result = supabase.table("tickets").select("id", count="exact").in_("status", ["SUBMITTED", "ASSIGNED"]).execute()
