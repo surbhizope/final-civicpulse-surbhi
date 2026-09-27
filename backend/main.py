@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -134,12 +135,67 @@ def add_event(ticket_id: str, label: str, detail: str, actor_id: str | None = No
     }).execute()
 
 
-def serialize_ticket(row: dict, pin: str | None = None) -> dict:
-    events = supabase.table("timeline_events").select("at,label,detail").eq("ticket_id", row["id"]).order("at").execute()
+def fetch_timeline_events(ticket_ids: list[str]) -> dict[str, list[dict]]:
+    """Fetch timelines for many tickets in one query (avoids the N+1 pattern)."""
+    if not ticket_ids:
+        return {}
+    result = (
+        supabase.table("timeline_events")
+        .select("ticket_id,at,label,detail")
+        .in_("ticket_id", ticket_ids)
+        .order("at")
+        .execute()
+    )
+    grouped: dict[str, list[dict]] = {}
+    for event in result.data or []:
+        grouped.setdefault(event["ticket_id"], []).append(
+            {"at": event["at"], "label": event["label"], "detail": event["detail"]}
+        )
+    return grouped
+
+
+def fetch_duplicate_numbers(rows: list[dict]) -> dict[str, str]:
+    """Resolve every duplicate_of id to its master ticket number in one query."""
+    duplicate_ids = {row["duplicate_of"] for row in rows if row.get("duplicate_of")}
+    if not duplicate_ids:
+        return {}
+    result = supabase.table("tickets").select("id,ticket_number").in_("id", list(duplicate_ids)).execute()
+    return {row["id"]: row["ticket_number"] for row in result.data or []}
+
+
+TICKETS_CACHE_TTL = 5.0
+_tickets_cache_payload: list[dict] | None = None
+_tickets_cache_at: float = 0.0
+
+
+def invalidate_tickets_cache() -> None:
+    global _tickets_cache_payload, _tickets_cache_at
+    _tickets_cache_payload = None
+    _tickets_cache_at = 0.0
+
+
+def serialize_ticket(
+    row: dict,
+    pin: str | None = None,
+    events: list[dict] | None = None,
+    duplicate_numbers: dict[str, str] | None = None,
+) -> dict:
+    if events is None:
+        fetched = (
+            supabase.table("timeline_events")
+            .select("at,label,detail")
+            .eq("ticket_id", row["id"])
+            .order("at")
+            .execute()
+        )
+        events = fetched.data or []
     duplicate_of = row.get("duplicate_of")
     if duplicate_of:
-        master = supabase.table("tickets").select("ticket_number").eq("id", duplicate_of).limit(1).execute()
-        duplicate_of = master.data[0]["ticket_number"] if master.data else None
+        if duplicate_numbers is not None:
+            duplicate_of = duplicate_numbers.get(duplicate_of)
+        else:
+            master = supabase.table("tickets").select("ticket_number").eq("id", duplicate_of).limit(1).execute()
+            duplicate_of = master.data[0]["ticket_number"] if master.data else None
     return {
         "id": row["id"],
         "ticketNumber": row["ticket_number"],
@@ -161,7 +217,7 @@ def serialize_ticket(row: dict, pin: str | None = None) -> dict:
         "createdAt": row["created_at"],
         "slaDueAt": row["sla_deadline"],
         "resolvedAt": row.get("resolved_at"),
-        "timeline": events.data if events.data else [],
+        "timeline": events,
     }
 
 
@@ -263,7 +319,8 @@ async def create_ticket(ticket: TicketCreate):
         # Increment impact count on master ticket (int read-modify-write; no rpc needed)
         new_impact = int(duplicate_ticket.get("impact_count") or 1) + 1
         supabase.table("tickets").update({"impact_count": new_impact}).eq("id", duplicate_ticket["id"]).execute()
-    
+
+    invalidate_tickets_cache()
     return serialize_ticket(created_ticket, pin)
 
 
@@ -271,8 +328,26 @@ async def create_ticket(ticket: TicketCreate):
 async def list_tickets():
     # Public read: homepage, map, and post-submit refresh work without a session.
     # PINs are never included (serialize_ticket only sets pin when explicitly passed).
+    global _tickets_cache_payload, _tickets_cache_at
+    now = time.monotonic()
+    if _tickets_cache_payload is not None and now - _tickets_cache_at < TICKETS_CACHE_TTL:
+        return _tickets_cache_payload
+
     result = supabase.table("tickets").select("*").order("created_at", desc=True).execute()
-    return [serialize_ticket(row) for row in result.data]
+    rows = result.data or []
+    events_map = fetch_timeline_events([row["id"] for row in rows])
+    duplicate_numbers = fetch_duplicate_numbers(rows)
+    payload = [
+        serialize_ticket(
+            row,
+            events=events_map.get(row["id"], []),
+            duplicate_numbers=duplicate_numbers,
+        )
+        for row in rows
+    ]
+    _tickets_cache_payload = payload
+    _tickets_cache_at = now
+    return payload
 
 
 @app.post("/tickets/track", response_model=TicketResponse)
@@ -334,6 +409,7 @@ async def ticket_action(ticket_id: str, action: str, request: TicketAction, user
     else:
         raise HTTPException(status_code=404, detail="Invalid action")
     
+    invalidate_tickets_cache()
     updated = supabase.table("tickets").select("*").eq("id", ticket_id).execute()
     return serialize_ticket(updated.data[0])
 
