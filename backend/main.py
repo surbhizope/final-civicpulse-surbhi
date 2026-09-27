@@ -227,7 +227,7 @@ async def health():
 
 
 @app.post("/auth/login", response_model=LoginResponse)
-async def login(request: LoginRequest):
+def login(request: LoginRequest):
     result = supabase.table("officials").select("*").eq("email", request.email).execute()
     
     if not result.data:
@@ -325,7 +325,7 @@ async def create_ticket(ticket: TicketCreate):
 
 
 @app.get("/tickets", response_model=list[TicketResponse])
-async def list_tickets():
+def list_tickets():
     # Public read: homepage, map, and post-submit refresh work without a session.
     # PINs are never included (serialize_ticket only sets pin when explicitly passed).
     global _tickets_cache_payload, _tickets_cache_at
@@ -351,7 +351,7 @@ async def list_tickets():
 
 
 @app.post("/tickets/track", response_model=TicketResponse)
-async def track_ticket(request: TrackRequest):
+def track_ticket(request: TrackRequest):
     ticket_number = request.ticket_number.upper()
     result = supabase.table("tickets").select("*").eq("ticket_number", ticket_number).execute()
     
@@ -366,7 +366,7 @@ async def track_ticket(request: TrackRequest):
 
 
 @app.patch("/tickets/{ticket_id}/{action}")
-async def ticket_action(ticket_id: str, action: str, request: TicketAction, user: dict = Depends(get_current_official)):
+def ticket_action(ticket_id: str, action: str, request: TicketAction, user: dict = Depends(get_current_official)):
     ticket_result = supabase.table("tickets").select("*").eq("id", ticket_id).execute()
     
     if not ticket_result.data:
@@ -415,19 +415,32 @@ async def ticket_action(ticket_id: str, action: str, request: TicketAction, user
 
 
 @app.get("/dashboard/stats", response_model=DashboardStats)
-async def dashboard_stats(user: dict = Depends(get_current_official)):
+def dashboard_stats(user: dict = Depends(get_current_official)):
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    
-    open_result = supabase.table("tickets").select("id", count="exact").in_("status", ["SUBMITTED", "ASSIGNED"]).execute()
-    in_progress_result = supabase.table("tickets").select("id", count="exact").eq("status", "IN_PROGRESS").execute()
-    breached_result = supabase.table("tickets").select("id", count="exact").eq("status", "BREACHED").execute()
-    resolved_result = supabase.table("tickets").select("id", count="exact").eq("status", "RESOLVED").gte("resolved_at", today_start).execute()
-    
+
+    # One round-trip instead of four sequential count queries.
+    result = supabase.table("tickets").select("status,resolved_at").execute()
+    rows = result.data or []
+    open_count = 0
+    in_progress = 0
+    breached = 0
+    resolved_today = 0
+    for row in rows:
+        status = row.get("status")
+        if status in ("SUBMITTED", "ASSIGNED"):
+            open_count += 1
+        elif status == "IN_PROGRESS":
+            in_progress += 1
+        elif status == "BREACHED":
+            breached += 1
+        elif status == "RESOLVED" and (row.get("resolved_at") or "") >= today_start:
+            resolved_today += 1
+
     return DashboardStats(
-        open=open_result.count or 0,
-        in_progress=in_progress_result.count or 0,
-        breached=breached_result.count or 0,
-        resolved_today=resolved_result.count or 0
+        open=open_count,
+        in_progress=in_progress,
+        breached=breached,
+        resolved_today=resolved_today
     )
 
 
